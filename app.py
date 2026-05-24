@@ -8,7 +8,7 @@ import glob
 import sqlite3
 import datetime
 
-# Konfigurasi halaman Streamlit
+# Konfigurasi halaman Streamlit secara premium
 st.set_page_config(
     page_title="Dashboard Alokasi Kuota Ujian Online",
     page_icon="📊",
@@ -16,7 +16,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS untuk tampilan premium & responsif
+# Custom CSS untuk memperindah tampilan visual dashboard
 st.markdown("""
     <style>
     .main {
@@ -62,7 +62,7 @@ st.markdown("<p class='custom-sub'>Sistem monitoring ketersediaan daya tampung s
 
 DB_NAME = "kuota_ujian.db"
 
-# Fungsi inisialisasi tabel SQLite tambahan jika diperlukan (backwards compatibility)
+# Fungsi inisialisasi tabel SQLite tambahan jika diperlukan
 def inisialisasi_db_jika_perlu():
     try:
         conn = sqlite3.connect(DB_NAME)
@@ -82,7 +82,7 @@ def inisialisasi_db_jika_perlu():
 # Jalankan inisialisasi database
 inisialisasi_db_jika_perlu()
 
-# Fungsi membaca berkas baik dalam format CSV maupun EXCEL (XLSX/XLS) secara cerdas
+# Fungsi membaca berkas baik dalam format CSV maupun EXCEL secara cerdas
 def baca_berkas(file_path_atau_buffer):
     if isinstance(file_path_atau_buffer, str):
         if file_path_atau_buffer.endswith(('.xlsx', '.xls')):
@@ -93,7 +93,7 @@ def baca_berkas(file_path_atau_buffer):
             return pd.read_excel(file_path_atau_buffer)
         return pd.read_csv(file_path_atau_buffer)
 
-# Fungsi pembersih & standardisasi berkas RUANG_TAP agar robust terhadap shift kolom / rename
+# Fungsi pembersih & standardisasi berkas RUANG_TAP agar robust terhadap pergeseran kolom
 def clean_ruang_tap(df):
     df_new = pd.DataFrame()
     if df.empty:
@@ -106,47 +106,67 @@ def clean_ruang_tap(df):
     id_sekolah_col = None
     tanggal_col = None
     
-    # Deteksi kolom id_ruang dan id_sekolah secara dinamis
+    # 1. Deteksi berbasis nama kolom yang eksak terlebih dahulu (mencegah overwrite oleh nilai data)
     for col in df.columns:
         c_lower = col.lower()
-        if 'id_ruang' in c_lower:
+        if 'id_ruang' in c_lower or 'idruang' in c_lower:
             id_ruang_col = col
-        elif 'id_sekolah' in c_lower:
+        elif 'id_sekolah' in c_lower or 'idsekolah' in c_lower:
             id_sekolah_col = col
             
-    # Temukan kolom tanggal yang valid berdasarkan analisis isi datanya (menghindari kolom teks salah nama)
-    # Tahap A: Cari kolom yang namanya mengandung indikasi tanggal DAN isi datanya memang format tanggal
+    # 2. Deteksi tanggal secara pintar (mencari kolom yang memiliki format tanggal aktual)
     for col in df.columns:
-        c_lower = col.lower()
-        if 'tanggal' in c_lower or 'tgl' in c_lower or 'date' in c_lower:
-            sample = df[col].astype(str).dropna()
-            if sample.str.contains(r'(\d{4}[-/]\d{2}[-/]\d{2})|(\d{2}[-/]\d{2}[-/]\d{4})').any():
+        sample = df[col].dropna()
+        if sample.empty:
+            continue
+        sample_str = sample.astype(str)
+        if sample_str.str.contains(r'(\d{4}[-/]\d{2}[-/]\d{2})|(\d{2}[-/]\d{2}[-/]\d{4})').any() or pd.api.types.is_datetime64_any_dtype(df[col]):
+            if tanggal_col is None:
                 tanggal_col = col
-                break
-                
-    # Tahap B: Jika tidak ketemu, cari kolom mana saja yang isinya mengandung struktur tanggal (tanpa mempedulikan nama header)
-    if not tanggal_col:
-        for col in df.columns:
-            sample = df[col].astype(str).dropna()
-            if sample.str.contains(r'(\d{4}[-/]\d{2}[-/]\d{2})|(\d{2}[-/]\d{2}[-/]\d{4})').any():
+            elif any(keyword in col.lower() for keyword in ['tanggal', 'tgl', 'date']):
                 tanggal_col = col
-                break
-            
-    # Tahap C: Jika tetap tidak ada yang lolos validasi isi, fallback ke pencarian teks biasa pada nama kolom
-    if not tanggal_col:
-        for col in df.columns:
-            c_lower = col.lower()
-            if 'tanggal' in c_lower or 'tgl' in c_lower or 'date' in c_lower:
-                tanggal_col = col
-                break
-            
-    # Fallback pencarian alternatif jika tidak pas 100%
+
+    # Jika kolom tanggal terdeteksi salah isi (berisi teks sekolah, bukan tanggal), arahkan ke kolom tanggal yang benar
+    if tanggal_col:
+        sample_check = df[tanggal_col].dropna()
+        if not sample_check.empty:
+            sample_check_str = sample_check.astype(str)
+            if not sample_check_str.str.contains(r'(\d{4}[-/]\d{2}[-/]\d{2})|(\d{2}[-/]\d{2}[-/]\d{4})').any() and not pd.api.types.is_datetime64_any_dtype(df[tanggal_col]):
+                for col in df.columns:
+                    s = df[col].dropna()
+                    if s.empty:
+                        continue
+                    s_str = s.astype(str)
+                    if s_str.str.contains(r'(\d{4}[-/]\d{2}[-/]\d{2})|(\d{2}[-/]\d{2}[-/]\d{4})').any() or pd.api.types.is_datetime64_any_dtype(df[col]):
+                        tanggal_col = col
+                        break
+
+    # Fallback indeks kolom jika kolom wajib tidak terdeteksi sama sekali
     if not id_ruang_col and len(df.columns) > 0:
         id_ruang_col = df.columns[0]
     if not id_sekolah_col and len(df.columns) > 1:
         id_sekolah_col = df.columns[1]
     if not tanggal_col and len(df.columns) > 2:
         tanggal_col = df.columns[2]
+
+    # --- SELEKSI AKTIF: Filter baris yang memiliki total peserta TAP/S2/Essay > 0 ---
+    peserta_cols = []
+    for col in df.columns:
+        if col in [id_ruang_col, id_sekolah_col, tanggal_col]:
+            continue
+        sample = df[col].dropna()
+        if sample.empty:
+            continue
+        if pd.to_numeric(sample, errors='coerce').isna().mean() > 0.5:
+            continue
+        peserta_cols.append(col)
+
+    has_active_participants = pd.Series(True, index=df.index)
+    if peserta_cols:
+        total_peserta_tap = pd.Series(0, index=df.index)
+        for col in peserta_cols:
+            total_peserta_tap += pd.to_numeric(df[col], errors='coerce').fillna(0)
+        has_active_participants = total_peserta_tap > 0
             
     # Standardisasi data ke dataframe baru
     if id_ruang_col:
@@ -156,9 +176,14 @@ def clean_ruang_tap(df):
     if tanggal_col:
         df_new['Tanggal'] = pd.to_datetime(df[tanggal_col], errors='coerce', dayfirst=True).dt.strftime('%Y-%m-%d')
         
+    df_new['__has_active_participants'] = has_active_participants
+    
+    # Saring hanya baris yang aktif TAP (peserta > 0)
+    df_new = df_new[df_new['__has_active_participants'] == True].drop('__has_active_participants', axis=1)
+        
     return df_new.dropna(subset=['id_ruang', 'Tanggal'])
 
-# Fungsi untuk menyimpan dan mengambil metadata dari SQLite (untuk melacak waktu pembaruan)
+# Fungsi untuk menyimpan dan mengambil metadata dari SQLite
 def dapatkan_metadata(key):
     try:
         conn = sqlite3.connect(DB_NAME)
@@ -188,7 +213,7 @@ def simpan_metadata(key, value):
 waktu_update = dapatkan_metadata("last_peserta_update")
 st.markdown(f"<div class='update-badge'>🕒 Data Peserta Terakhir Diperbarui: {waktu_update}</div>", unsafe_allow_html=True)
 
-# Fungsi pembantu untuk menghasilkan warna gradasi baru (5 Kategori Warna termasuk Biru TAP)
+# Fungsi pembantu untuk menghasilkan warna gradasi tabel
 def get_color_style(pct, is_tap=False):
     if pd.isna(pct):
         return 'background-color: #f1f3f5; color: #adb5bd; text-align: center;'
@@ -212,7 +237,7 @@ def get_color_style(pct, is_tap=False):
     # 4. Di bawah 50% -> Hijau Muda
     return 'background-color: #d4edda; color: #155724; font-weight: bold; text-align: center;'
 
-# Fungsi untuk memeriksa apakah SQLite database sudah memiliki data yang lengkap
+# Fungsi untuk memeriksa status keaslian data SQLite
 def cek_db_tersimpan():
     if not os.path.exists(DB_NAME):
         return False
@@ -227,7 +252,7 @@ def cek_db_tersimpan():
     except Exception:
         return False
 
-# Fungsi menyimpan data mentah ke SQLite (Mengganti data lama secara penuh)
+# Fungsi menyimpan data ke SQLite database
 def simpan_ke_sqlite(df_m, df_w, df_s, df_r, df_rt=None, update_peserta_only=False):
     conn = sqlite3.connect(DB_NAME)
     if not update_peserta_only:
@@ -236,11 +261,9 @@ def simpan_ke_sqlite(df_m, df_w, df_s, df_r, df_rt=None, update_peserta_only=Fal
         df_s.to_sql('master_sekolah', conn, if_exists='replace', index=False)
         df_r.to_sql('master_ruang', conn, if_exists='replace', index=False)
         if df_rt is not None:
-            # Bersihkan dan standardisasi df_rt sebelum simpan
             df_rt_clean = clean_ruang_tap(df_rt)
             df_rt_clean.to_sql('master_ruang_tap', conn, if_exists='replace', index=False)
     else:
-        # Jika hanya memperbarui peserta saja
         df_m.to_sql('master_peserta', conn, if_exists='replace', index=False)
         
     conn.close()
@@ -248,8 +271,6 @@ def simpan_ke_sqlite(df_m, df_w, df_s, df_r, df_rt=None, update_peserta_only=Fal
     # Rekam waktu jam update saat ini
     waktu_sekarang = datetime.datetime.now().strftime("%d-%m-%Y %H:%M:%S WIB")
     simpan_metadata("last_peserta_update", waktu_sekarang)
-    
-    # Hapus cache streamlit agar data baru langsung tampil tanpa tertahan cache lama
     st.cache_data.clear()
 
 # Fungsi Deteksi File Lokal Otomatis & Cerdas
@@ -272,13 +293,12 @@ def cari_file_lokal():
         elif "master_wilayah" in f_lower or "master wilayah" in f_lower:
             wilayah_file = f
         elif "master" in f_lower or "rekap_peserta" in f_lower or "worksheet" in f_lower:
-            # Pastikan bukan file master lainnya
             if "ruang" not in f_lower and "sekolah" not in f_lower and "wilayah" not in f_lower:
                 master_file = f
                 
     return master_file, wilayah_file, sekolah_file, ruang_file, ruang_tap_file
 
-# Fungsi Pembacaan, Penggabungan, dan Kalkulasi Data dari SQLite (Kapasitas Dinamis per Tanggal)
+# Fungsi utama untuk pemrosesan, penggabungan, dan kalkulasi dinamis kapasitas
 @st.cache_data
 def load_and_process_data_from_db():
     conn = sqlite3.connect(DB_NAME)
@@ -296,95 +316,164 @@ def load_and_process_data_from_db():
     for df in [df_master, df_wilayah, df_sekolah, df_ruang]:
         df.columns = df.columns.str.strip()
         
-    # Standardisasi df_ruang_tap secara eksplist dari database tanpa re-run column detection dinamis yang riskan
-    df_ruang_tap = df_ruang_tap_raw.copy()
-    df_ruang_tap.columns = df_ruang_tap.columns.astype(str).str.strip()
-        
-    # Helper untuk menstandardisasi ID / Kode agar tipe data COCOK saat digabung
+    # --- PROSEDUR STANDARDISASI TIAP-TIAP KOLOM ---
     def standard_id(series):
         return series.astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
         
-    # Standardisasi kolom relasi data
+    def standard_date(series):
+        return pd.to_datetime(series, errors='coerce').dt.strftime('%Y-%m-%d').astype(str).str.strip()
+        
+    # Standardisasi format tgl_ujian master peserta
+    if 'kode_tuo' in df_master.columns:
+        df_master['kode_tuo'] = standard_id(df_master['kode_tuo'])
+    if 'tgl_ujian' in df_master.columns:
+        df_master['tgl_ujian'] = standard_date(df_master['tgl_ujian'])
+
+    # Standardisasi df_ruang_tap
+    df_ruang_tap = df_ruang_tap_raw.copy()
+    df_ruang_tap.columns = df_ruang_tap.columns.astype(str).str.strip()
+    if not df_ruang_tap.empty:
+        if 'id_sekolah' in df_ruang_tap.columns:
+            df_ruang_tap['id_sekolah'] = standard_id(df_ruang_tap['id_sekolah'])
+        if 'id_ruang' in df_ruang_tap.columns:
+            df_ruang_tap['id_ruang'] = standard_id(df_ruang_tap['id_ruang'])
+        if 'Tanggal' in df_ruang_tap.columns:
+            df_ruang_tap['Tanggal'] = standard_date(df_ruang_tap['Tanggal'])
+    else:
+        df_ruang_tap = pd.DataFrame(columns=['id_ruang', 'id_sekolah', 'Tanggal'])
+        
+    # Standardisasi kolom relasi data wilayah, sekolah, dan ruang
     if 'id_sekolah' in df_sekolah.columns:
         df_sekolah['id_sekolah'] = standard_id(df_sekolah['id_sekolah'])
     if 'id_sekolah' in df_ruang.columns:
         df_ruang['id_sekolah'] = standard_id(df_ruang['id_sekolah'])
     if 'id_ruang' in df_ruang.columns:
-        df_ruang['id_ruang'] = standard_id(df_ruang['id_ruang']) # Standardisasi id_ruang agar bertipe string
-    if 'kode_tuo' in df_master.columns:
-        df_master['kode_tuo'] = standard_id(df_master['kode_tuo'])
+        df_ruang['id_ruang'] = standard_id(df_ruang['id_ruang'])
         
     if 'id_wilayah' in df_wilayah.columns:
         df_wilayah['id_wilayah'] = standard_id(df_wilayah['id_wilayah'])
     if 'id_wilayah' in df_sekolah.columns:
         df_sekolah['id_wilayah'] = standard_id(df_sekolah['id_wilayah'])
         
-    if not df_ruang_tap.empty:
-        df_ruang_tap['id_ruang'] = standard_id(df_ruang_tap['id_ruang'])
-        df_ruang_tap['id_sekolah'] = standard_id(df_ruang_tap['id_sekolah'])
-        df_ruang_tap['Tanggal'] = df_ruang_tap['Tanggal'].astype(str).str.strip()
-    else:
-        df_ruang_tap = pd.DataFrame(columns=['id_ruang', 'id_sekolah', 'Tanggal'])
+    # --- HOT-FIX 1: KOREKSI DATA & WILAYAH GEOGRAFIS ITS NU PEKALONGAN (4212) ---
+    if 'id_sekolah' in df_sekolah.columns:
+        if not (df_sekolah['id_sekolah'] == '4212').any():
+            new_school = {
+                'id_sekolah': '4212',
+                'nama_sekolah': 'ITS NU PEKALONGAN',
+                'id_wilayah': '33264', # Kabupaten Pekalongan
+                'alamat': 'Pekalongan',
+                'ruang': 6
+            }
+            df_sekolah = pd.concat([df_sekolah, pd.DataFrame([new_school])], ignore_index=True)
+        else:
+            df_sekolah.loc[df_sekolah['id_sekolah'] == '4212', 'id_wilayah'] = '33264'
+            df_sekolah.loc[df_sekolah['id_sekolah'] == '4212', 'nama_sekolah'] = 'ITS NU PEKALONGAN'
+
+        # SMKN 2 Pekalongan (4202) diset secara akurat ke Kota Pekalongan (id_wilayah: 33755)
+        df_sekolah.loc[df_sekolah['id_sekolah'] == '4202', 'id_wilayah'] = '33755'
+    # -------------------------------------------------------------------------------
+
+    # --- HOT-FIX 2: SUNTIKKAN DATA RUANGAN LENGKAP UNTUK ITS NU PEKALONGAN (4212) ---
+    if not df_ruang.empty and 'id_sekolah' in df_ruang.columns:
+        if not (df_ruang['id_sekolah'] == '4212').any():
+            new_rooms = []
+            for r in range(1, 6):
+                new_rooms.append({
+                    'id_ruang': f'4212{r}',
+                    'id_sekolah': '4212',
+                    'nama_ruang': 'ITS NU PEKALONGAN',
+                    'kapasitas': 30,
+                    'Ruang': str(r)
+                })
+            # Ruangan ke-6 berkapasitas 15
+            new_rooms.append({
+                'id_ruang': '42126',
+                'id_sekolah': '4212',
+                'nama_ruang': 'ITS NU PEKALONGAN',
+                'kapasitas': 15,
+                'Ruang': '6'
+            })
+            df_ruang = pd.concat([df_ruang, pd.DataFrame(new_rooms)], ignore_index=True)
+        else:
+            if not (df_ruang['id_ruang'] == '42126').any():
+                new_room = {
+                    'id_ruang': '42126',
+                    'id_sekolah': '4212',
+                    'nama_ruang': 'ITS NU PEKALONGAN',
+                    'kapasitas': 15,
+                    'Ruang': '6'
+                }
+                df_ruang = pd.concat([df_ruang, pd.DataFrame([new_room])], ignore_index=True)
+    # -------------------------------------------------------------------------------
         
-    # Standardisasi format tgl_ujian master peserta
-    df_master['tgl_ujian'] = pd.to_datetime(df_master['tgl_ujian'], errors='coerce').dt.strftime('%Y-%m-%d')
-    df_master['tgl_ujian'] = df_master['tgl_ujian'].astype(str).str.strip()
     unique_dates = df_master['tgl_ujian'].dropna().unique()
     if len(unique_dates) == 0:
         unique_dates = ['2026-06-20']
-        
-    # 2. Hitung Kapasitas Maksimal per Sekolah dengan Aturan Sesi Dinamis (2 Sesi jika ada TAP, else 5 Sesi)
+
+    # --- HITUNG TOTAL PESERTA TAP & S2 AKTUAL RIIL DARI FILE PESERTA ---
+    df_master['jml_s2_num'] = pd.to_numeric(df_master['jml_s2'], errors='coerce').fillna(0)
+    df_master['jml_tap_num'] = pd.to_numeric(df_master['jml_tap'], errors='coerce').fillna(0)
+    
+    # Kelompokkan jumlah peserta TAP/S2 per sekolah per tanggal ujian
+    df_master_tap_check = df_master.groupby(['kode_tuo', 'tgl_ujian'])[['jml_s2_num', 'jml_tap_num']].sum().reset_index()
+    df_master_tap_check['total_tap_s2_aktual'] = df_master_tap_check['jml_s2_num'] + df_master_tap_check['jml_tap_num']
+    
+    # Buat dictionary pemetaan (id_sekolah, tanggal) -> total peserta TAP/S2 riil
+    tap_aktual_dict = dict(zip(
+        zip(df_master_tap_check['kode_tuo'], df_master_tap_check['tgl_ujian']),
+        df_master_tap_check['total_tap_s2_aktual']
+    ))
+
+    # Buat set berisi pasangan (id_ruang, Tanggal) dari data clean_ruang_tap
+    active_tap_rooms = set(zip(df_ruang_tap['id_ruang'], df_ruang_tap['Tanggal']))
+
+    # --- PROSEDUR UTAMA PERHITUNGAN KAPASITAS DINAMIS YANG AMAN & PRESISI ---
     if 'kapasitas' in df_ruang.columns:
         df_ruang['kapasitas'] = pd.to_numeric(df_ruang['kapasitas'], errors='coerce').fillna(0).astype(int)
         
-        # Buat kombinasi semua ruang dan semua tanggal ujian yang aktif
-        df_dates_grid = pd.DataFrame({'tgl_ujian': unique_dates})
-        df_ruang_copy = df_ruang.copy()
-        df_ruang_copy['key'] = 1
-        df_dates_grid['key'] = 1
-        df_ruang_dates = pd.merge(df_ruang_copy, df_dates_grid, on='key').drop('key', axis=1)
-        
-        # Bersihkan whitespace
-        df_ruang_dates['id_ruang'] = df_ruang_dates['id_ruang'].astype(str).str.strip()
-        df_ruang_dates['tgl_ujian'] = df_ruang_dates['tgl_ujian'].astype(str).str.strip()
-        
-        # Merge dengan data ruang TAP untuk melacak ruang yang terpakai TAP pada tanggal ujian tertentu
-        df_ruang_tap_clean = df_ruang_tap[['id_ruang', 'Tanggal']].copy()
-        df_ruang_tap_clean.columns = ['id_ruang', 'tap_tgl_ujian']
-        df_ruang_tap_clean['id_ruang'] = df_ruang_tap_clean['id_ruang'].astype(str).str.strip()
-        df_ruang_tap_clean['tap_tgl_ujian'] = df_ruang_tap_clean['tap_tgl_ujian'].astype(str).str.strip()
-        df_ruang_tap_clean['is_room_tap'] = True
-        
-        # PERBAIKAN STRUKTURAL: Konversi pencocokan tanggal gabungan menjadi objek Datetime murni agar 100% akurat
-        df_ruang_dates['tgl_ujian_dt'] = pd.to_datetime(df_ruang_dates['tgl_ujian'], errors='coerce')
-        df_ruang_tap_clean['tap_tgl_ujian_dt'] = pd.to_datetime(df_ruang_tap_clean['tap_tgl_ujian'], errors='coerce')
-        
-        df_ruang_dates = pd.merge(
-            df_ruang_dates,
-            df_ruang_tap_clean,
-            left_on=['id_ruang', 'tgl_ujian_dt'],
-            right_on=['id_ruang', 'tap_tgl_ujian_dt'],
-            how='left'
-        )
-        df_ruang_dates['is_room_tap'] = df_ruang_dates['is_room_tap'].fillna(False)
-        
-        # Aturan Sesi: 2 Sesi jika terpakai TAP/S2/Essay, else 5 Sesi
-        df_ruang_dates['kapasitas_sesi'] = np.where(
-            df_ruang_dates['is_room_tap'],
-            df_ruang_dates['kapasitas'] * 2,
-            df_ruang_dates['kapasitas'] * 5
-        ).astype(int)
-        
-        # Group by school & date untuk total kapasitas total real-time
-        df_capacity = df_ruang_dates.groupby(['id_sekolah', 'tgl_ujian'])['kapasitas_sesi'].sum().reset_index()
-        df_capacity.columns = ['id_sekolah', 'tgl_ujian', 'kapasitas_total']
-        
-        # Simpan metadata kapasitas 5 sesi standar untuk rincian detail (Tab 2)
+        capacity_records = []
+        for S in df_sekolah['id_sekolah'].unique():
+            # Saring seluruh ruangan milik sekolah S
+            school_rooms = df_ruang[df_ruang['id_sekolah'] == S]
+            if school_rooms.empty:
+                continue
+                
+            for D in unique_dates:
+                # Dapatkan jumlah peserta TAP/S2 riil sekolah S pada tanggal D
+                total_tap_s2_real = tap_aktual_dict.get((S, D), 0)
+                
+                total_capacity_for_date = 0
+                for _, room in school_rooms.iterrows():
+                    r_id = room['id_ruang']
+                    cap = int(room['kapasitas'])
+                    
+                    # LOGIKA UTAMA:
+                    # 1. Jika secara aktual TIDAK ADA peserta TAP/S2 di sekolah S pada tanggal D, maka semua ruangan diabaikan & berjalan 5 Sesi penuh!
+                    # 2. Jika secara aktual ADA peserta TAP/S2, maka hanya ruangan terdaftar yang berjalan 2 Sesi, lainnya tetap 5 Sesi penuh!
+                    if total_tap_s2_real == 0:
+                        sesi = 5
+                    else:
+                        if (r_id, D) in active_tap_rooms:
+                            sesi = 2
+                        else:
+                            sesi = 5
+                    
+                    total_capacity_for_date += (cap * sesi)
+                
+                capacity_records.append({
+                    'id_sekolah_capacity': S,
+                    'tgl_ujian': D,
+                    'kapasitas_total': total_capacity_for_date,
+                    'is_tap': total_tap_s2_real > 0 and any((r['id_ruang'], D) in active_tap_rooms for _, r in school_rooms.iterrows())
+                })
+                
+        df_capacity = pd.DataFrame(capacity_records)
         df_ruang['kapasitas_5_sesi'] = df_ruang['kapasitas'] * 5
     else:
         df_ruang['kapasitas'] = 0
         df_ruang['kapasitas_5_sesi'] = 0
-        df_capacity = pd.DataFrame(columns=['id_sekolah', 'tgl_ujian', 'kapasitas_total'])
+        df_capacity = pd.DataFrame(columns=['id_sekolah_capacity', 'tgl_ujian', 'kapasitas_total', 'is_tap'])
     
     # 3. Hubungkan data sekolah dengan data wilayah (Kabupaten)
     df_sch_wil = pd.merge(df_sekolah, df_wilayah, on='id_wilayah', how='left')
@@ -394,7 +483,7 @@ def load_and_process_data_from_db():
     
     # Bersihkan keys sebelum merge kapasitas
     if not df_capacity.empty:
-        df_capacity['id_sekolah'] = df_capacity['id_sekolah'].astype(str).str.strip()
+        df_capacity['id_sekolah_capacity'] = df_capacity['id_sekolah_capacity'].astype(str).str.strip()
         df_capacity['tgl_ujian'] = df_capacity['tgl_ujian'].astype(str).str.strip()
         
     df_merged['kode_tuo'] = df_merged['kode_tuo'].astype(str).str.strip()
@@ -405,33 +494,12 @@ def load_and_process_data_from_db():
         df_merged,
         df_capacity,
         left_on=['kode_tuo', 'tgl_ujian'],
-        right_on=['id_sekolah', 'tgl_ujian'],
+        right_on=['id_sekolah_capacity', 'tgl_ujian'],
         how='left'
     )
     
-    # 6. Tandai apakah sekolah tersebut memiliki Ujian TAP / S2 / Essay pada tanggal tertentu (is_tap)
-    df_ruang_tap_tag = df_ruang_tap.copy()
-    df_ruang_tap_tag['is_tap'] = True
-    df_sch_tap_dates = df_ruang_tap_tag[['id_sekolah', 'Tanggal', 'is_tap']].drop_duplicates()
-    df_sch_tap_dates.columns = ['tap_id_sekolah', 'tap_Tanggal', 'is_tap']
-    df_sch_tap_dates['tap_id_sekolah'] = df_sch_tap_dates['tap_id_sekolah'].astype(str).str.strip()
-    df_sch_tap_dates['tap_Tanggal'] = df_sch_tap_dates['tap_Tanggal'].astype(str).str.strip()
-    
-    # Gunakan robust datetime matching untuk highlight warna biru di tabel pivot
-    df_merged['tgl_ujian_dt'] = pd.to_datetime(df_merged['tgl_ujian'], errors='coerce')
-    df_sch_tap_dates['tap_Tanggal_dt'] = pd.to_datetime(df_sch_tap_dates['tap_Tanggal'], errors='coerce')
-    
-    df_merged = pd.merge(
-        df_merged,
-        df_sch_tap_dates,
-        left_on=['kode_tuo', 'tgl_ujian_dt'],
-        right_on=['tap_id_sekolah', 'tap_Tanggal_dt'],
-        how='left'
-    )
-    df_merged['is_tap'] = df_merged['is_tap'].fillna(False).astype(bool)
-    
-    # Bersihkan sisa merge redundan dan kolom datetime sementara
-    for col_to_drop in ['tap_id_sekolah', 'tap_Tanggal_dt', 'tgl_ujian_dt', 'id_sekolah_y']:
+    # Bersihkan sisa merge redundan
+    for col_to_drop in ['id_sekolah_y', 'id_sekolah_capacity']:
         if col_to_drop in df_merged.columns:
             df_merged = df_merged.drop(col_to_drop, axis=1)
             
@@ -441,7 +509,7 @@ def load_and_process_data_from_db():
     df_merged['kapasitas_total'] = df_merged['kapasitas_total'].fillna(0).astype(int)
     df_merged['nama_sekolah'] = df_merged['nama_sekolah'].fillna(df_merged['nama_tuo'])
     
-    # 7. Hitung Total Peserta Berdasarkan Kolom yang Tersedia
+    # 6. Hitung Total Peserta Berdasarkan Kolom yang Tersedia
     participant_cols = ['jml_s2', 'jml_tap', 'jml_s1_objektif', 'jml_s1_uraian']
     for col in participant_cols:
         if col in df_merged.columns:
@@ -449,7 +517,6 @@ def load_and_process_data_from_db():
         else:
             df_merged[col] = 0
             
-    # Sesuai request: jumlah peserta = jml_s2 + jml_tap + jml_s1_objektif + jml_s1_uraian
     df_merged['total_peserta'] = (
         df_merged['jml_s2'] + 
         df_merged['jml_tap'] + 
@@ -458,7 +525,6 @@ def load_and_process_data_from_db():
     ).astype(int)
     df_merged['sisa_kuota'] = (df_merged['kapasitas_total'] - df_merged['total_peserta']).astype(int)
     
-    # Persentase keterisian lokasi
     df_merged['persentase_keterisian'] = np.where(
         df_merged['kapasitas_total'] > 0,
         (df_merged['total_peserta'] / df_merged['kapasitas_total'] * 100).round(1),
@@ -477,7 +543,22 @@ with st.expander("⚙️ Konfigurasi Basis Data & Unggah File Master (Khusus Adm
     loc_master, loc_wilayah, loc_sekolah, loc_ruang, loc_ruang_tap = cari_file_lokal()
     file_lokal_siap = loc_master and loc_wilayah and loc_sekolah and loc_ruang
 
-    # Tampilkan Ringkasan Baris SQLite Aktif (Jika siap)
+    # Tombol Reset Database Total
+    st.subheader("🚨 Fitur Pembersihan Database")
+    if st.button("Hapus & Reset Semua Data Database (Mulai Baru)", type="primary"):
+        try:
+            st.cache_data.clear()
+            if os.path.exists(DB_NAME):
+                os.remove(DB_NAME)
+            inisialisasi_db_jika_perlu()
+            st.success("✅ Database SQLite telah direset sepenuhnya! Silakan unggah kembali file Anda yang benar.")
+            st.rerun()
+        except Exception as ex:
+            st.error(f"Gagal mereset database: {ex}")
+            
+    st.markdown("---")
+
+    # Tampilkan Ringkasan Baris SQLite Aktif
     if db_siap:
         try:
             conn = sqlite3.connect(DB_NAME)
@@ -523,14 +604,12 @@ with st.expander("⚙️ Konfigurasi Basis Data & Unggah File Master (Khusus Adm
     with col_adm2:
         st.subheader("Opsi 2: Unggah Manual (Satuan atau Sekaligus)")
         
-        # File uploaders
         uploaded_master = st.file_uploader("1. Unggah Data Peserta Baru (Mendukung .xlsx, .xls, .csv)", type=["csv", "xlsx", "xls"])
         uploaded_wilayah = st.file_uploader("2. File Master Wilayah (CSV/Excel)", type=["csv", "xlsx", "xls"])
         uploaded_sekolah = st.file_uploader("3. File Master Sekolah (CSV/Excel)", type=["csv", "xlsx", "xls"])
         uploaded_ruang = st.file_uploader("4. File Master Ruang (CSV/Excel)", type=["csv", "xlsx", "xls"])
         uploaded_ruang_tap = st.file_uploader("5. File Ruang TAP (CSV/Excel)", type=["csv", "xlsx", "xls"])
         
-        # Deteksi berkas apa saja yang siap diunggah
         files_to_update = {}
         if uploaded_master:
             files_to_update['master_peserta'] = uploaded_master
@@ -548,7 +627,6 @@ with st.expander("⚙️ Konfigurasi Basis Data & Unggah File Master (Khusus Adm
             for name, file in files_to_update.items():
                 st.markdown(f"- **{name.replace('master_', '').replace('_', ' ').title()}**: `{file.name}` ✅")
                 
-            # Validasi inisialisasi awal
             if not db_siap and len(files_to_update) < 5:
                 st.warning("⚠️ Basis data SQLite kosong. Untuk pembentukan pertama kali, mohon unggah kelima berkas master di atas secara lengkap sekaligus.")
             else:
@@ -559,7 +637,6 @@ with st.expander("⚙️ Konfigurasi Basis Data & Unggah File Master (Khusus Adm
                         if uploaded_master:
                             df_m = baca_berkas(uploaded_master)
                             df_m.to_sql('master_peserta', conn, if_exists='replace', index=False)
-                            # Rekam waktu jam update
                             waktu_sekarang = datetime.datetime.now().strftime("%d-%m-%Y %H:%M:%S WIB")
                             simpan_metadata("last_peserta_update", waktu_sekarang)
                             st.success("✅ Berhasil menyimpan Data Peserta!")
@@ -594,11 +671,37 @@ with st.expander("⚙️ Konfigurasi Basis Data & Unggah File Master (Khusus Adm
                     except Exception as ex:
                         st.error(f"Gagal memproses berkas: {ex}")
 
+    # --- DIAGNOSTIK TABEL DI DATABASE (PANEL MANDIRI KHUSUS DEVELOPER) ---
+    st.markdown("---")
+    st.markdown("### 🔍 Panel Diagnostik Mandiri (Developer & Admin)")
+    show_debug = st.checkbox("Tampilkan Detail Isi SQLite & Diagnostik Kunci Relasi", value=False)
+    if show_debug:
+        try:
+            conn = sqlite3.connect(DB_NAME)
+            st.markdown("**10 Baris Pertama Tabel master_ruang_tap di SQLite:**")
+            db_tap_show = pd.read_sql_query("SELECT * FROM master_ruang_tap LIMIT 10", conn)
+            st.dataframe(db_tap_show)
+            
+            st.markdown("**10 Baris Pertama Tabel master_ruang di SQLite:**")
+            db_ruang_show = pd.read_sql_query("SELECT * FROM master_ruang LIMIT 10", conn)
+            st.dataframe(db_ruang_show)
+            
+            st.markdown("**Status Kecocokan Ruang TAP & Ruang Sekolah (ITS NU Pekalongan [4212] & SMKN 2 Pekalongan [4202]):**")
+            df_merged_debug, _, _ = load_and_process_data_from_db()
+            pekalongan_data = df_merged_debug[df_merged_debug['kode_tuo'].isin(['4202', '4212'])]
+            if not pekalongan_data.empty:
+                st.dataframe(pekalongan_data[['nama_sekolah', 'nama_kabupaten', 'tgl_ujian', 'kapasitas_total', 'total_peserta', 'is_tap']].drop_duplicates())
+            else:
+                st.warning("Data sekolah 4202 atau 4212 tidak ditemukan dalam rekap peserta.")
+            conn.close()
+        except Exception as ex_debug:
+            st.error(f"Gagal memuat panel diagnostik: {ex_debug}")
+
 
 # Cek kesiapan pemrosesan data utama
 data_siap_proses = cek_db_tersimpan()
 
-# --- FILTER DI SIDEBAR (HANYA UNTUK FILTER) ---
+# --- FILTER DI SIDEBAR ---
 st.sidebar.header("🔍 Filter Wilayah & Jadwal")
 
 if data_siap_proses:
@@ -633,11 +736,10 @@ if data_siap_proses:
         elif pilih_status == "Hanya yang Aman (Tersisa)":
             df_filtered = df_filtered[df_filtered['sisa_kuota'] > 0]
             
-        # --- PANEL METRIK UTAMA (KPI) DENGAN 5 KOLOM ---
+        # --- PANEL METRIK UTAMA DENGAN 5 KOLOM ---
         col1, col2, col3, col4, col5 = st.columns(5)
         
         total_peserta = df_filtered['total_peserta'].sum()
-        # Hitung kapasitas berdasarkan keunikan kombinasi sekolah & tanggal ujian yang ter-filter
         total_daya_tampung = df_filtered.drop_duplicates(subset=['kode_tuo', 'tgl_ujian'])['kapasitas_total'].sum()
         sisa_total_kuota = total_daya_tampung - total_peserta
         sekolah_aktif = df_filtered['kode_tuo'].nunique()
@@ -672,7 +774,7 @@ if data_siap_proses:
             st.markdown(f"""
             <div class="metric-card" style="border-left-color: #ffc107;">
                 <p style="color: #6c757d; margin-bottom: 2px; font-size:14px;">Lokasi Ujian Aktif</p>
-                <h3 style="margin:0; font-size:24px;">{sekolah_aktif} Sekolah</h3>
+                <h3 style="margin:0; font-size:24px;">{sekolah_aktif} Lokasi</h3>
             </div>
             """, unsafe_allow_html=True)
 
@@ -685,9 +787,9 @@ if data_siap_proses:
             """, unsafe_allow_html=True)
             
         # --- TABEL UTAMA PIVOT DENGAN CONDITIONAL COLORING ---
-        st.subheader("🗓️ Visualisasi Sisa Kuota Sekolah per Tanggal (Kapasitas Dinamis)")
+        st.subheader("🗓️ Visualisasi Sisa Kuota Lokasi per Tanggal (Kapasitas Dinamis)")
         st.markdown(
-            "Tabel pivot di bawah menampilkan **sisa kapasitas** untuk masing-masing sekolah. "
+            "Tabel pivot di bawah menampilkan **sisa kapasitas** untuk masing-masing lokasi. "
             "Kapasitas dihitung berdasarkan **Daya Tampung Ruang x 2 Sesi** jika terdapat ujian TAP/S2 pada tanggal tersebut, dan **x 5 Sesi** jika ujian reguler."
         )
         
@@ -700,7 +802,7 @@ if data_siap_proses:
         if df_filtered.empty:
             st.info("⚠️ Tidak ada data yang sesuai dengan kombinasi filter Anda saat ini.")
         else:
-            # 1. Selalu buat Pivot Matrix Rasio Persentase Keterisian sebagai acuan pemetaan warna yang presisi
+            # 1. Pivot Matrix Rasio Persentase Keterisian
             df_pivot_pct = df_filtered.pivot_table(
                 index=['nama_sekolah'],
                 columns='tgl_ujian',
@@ -708,7 +810,7 @@ if data_siap_proses:
                 aggfunc='mean'
             )
             
-            # 2. Pivot Matrix is_tap untuk identifikasi letak ujian TAP/S2/Essay
+            # 2. Pivot Matrix is_tap untuk identifikasi ujian TAP/S2/Essay
             df_pivot_tap = df_filtered.pivot_table(
                 index=['nama_sekolah'],
                 columns='tgl_ujian',
@@ -716,7 +818,7 @@ if data_siap_proses:
                 aggfunc='max'
             ).fillna(False).astype(bool)
 
-            # Fungsi pembuat warna berbasis matriks persentase keterisian terpadu (menyertakan deteksi TAP)
+            # Fungsi pembuat warna berbasis matriks persentase keterisian
             def style_matriks_by_percentage(val_df):
                 out = pd.DataFrame('', index=val_df.index, columns=val_df.columns)
                 for r in val_df.index:
@@ -752,7 +854,6 @@ if data_siap_proses:
                 
                 df_gabung = df_pivot_peserta.copy()
                 for col in df_pivot_peserta.columns:
-                    # Ambil nilai bulat (integer) bebas desimal `.0` & hilangkan koma ribuan
                     peserta_str = df_pivot_peserta[col].fillna(0).astype(int).astype(str)
                     kapasitas_str = df_pivot_kapasitas[col].fillna(0).astype(int).astype(str)
                     
@@ -762,12 +863,12 @@ if data_siap_proses:
                 styled_df = df_gabung.style.apply(style_matriks_by_percentage, axis=None)
                 st.dataframe(styled_df, use_container_width=True, height=450)
 
-        # --- PANEL PANEL RINCIAN RUANGAN & EKSPOR DATA ---
+        # --- PANEL DETAIL RINCIAN RUANGAN & EKSPOR DATA ---
         st.markdown("---")
         tab1, tab2, tab3 = st.tabs(["📊 Analisis Grafik", "📋 Struktur Kapasitas Ruang", "💾 Ekspor Laporan"])
         
         with tab1:
-            st.subheader("Grafik Analisis Alokasi per Sekolah (Kapasitas Total)")
+            st.subheader("Grafik Analisis Alokasi per Lokasi (Kapasitas Total)")
             if not df_filtered.empty:
                 df_chart = df_filtered.groupby('nama_sekolah')[['total_peserta', 'kapasitas_total']].sum().reset_index()
                 
@@ -788,7 +889,7 @@ if data_siap_proses:
                 
                 fig.update_layout(
                     barmode='group',
-                    xaxis_title='Nama Sekolah',
+                    xaxis_title='Nama Lokasi',
                     yaxis_title='Jumlah Kursi',
                     legend_title='Keterangan',
                     template='plotly_white',
@@ -813,11 +914,9 @@ if data_siap_proses:
                     'kapasitas_5_sesi': 'Kapasitas Total (5 Sesi)',
                     'Ruang': 'Nomor Ruangan'
                 })
-                # Urutkan kolom agar enak dibaca
                 kolom_tampil = ['id_sekolah', 'Nama Ruang / Lokasi', 'Nomor Ruangan', 'Kapasitas Dasar (1 Sesi)', 'Kapasitas Total (5 Sesi)']
                 kolom_tersedia = [col for col in kolom_tampil if col in df_show.columns]
                 
-                # Menghilangkan koma ribuan pada visualisasi rincian data table ruang
                 st.dataframe(
                     df_show[kolom_tersedia], 
                     use_container_width=True, 
@@ -830,14 +929,14 @@ if data_siap_proses:
                     }
                 )
             else:
-                st.info("Tidak ada rincian ruang untuk sekolah aktif saat ini.")
+                st.info("Tidak ada rincian ruang untuk lokasi aktif saat ini.")
                 
         with tab3:
             st.subheader("Ekspor Hasil Analisis")
             st.markdown("Unduh hasil filter visualisasi saat ini ke dalam berkas CSV untuk kemudahan laporan eksternal.")
             
             df_export = df_filtered[['nama_kabupaten', 'nama_sekolah', 'tgl_ujian', 'total_peserta', 'kapasitas_total', 'sisa_kuota', 'persentase_keterisian']].copy()
-            df_export.columns = ['Kabupaten', 'Nama Sekolah', 'Tanggal Ujian', 'Total Peserta', 'Kapasitas Maksimal', 'Sisa Kuota', 'Persentase Keterisian (%)']
+            df_export.columns = ['Kabupaten', 'Nama Lokasi', 'Tanggal Ujian', 'Total Peserta', 'Kapasitas Maksimal', 'Sisa Kuota', 'Persentase Keterisian (%)']
             
             csv_data = df_export.to_csv(index=False).encode('utf-8')
             
@@ -854,7 +953,6 @@ if data_siap_proses:
         st.info("Saran: Pastikan struktur kolom CSV Anda telah sesuai atau gunakan opsi Upload Manual di Sidebar.")
         st.code(str(e))
 else:
-    # Halaman Selamat Datang / Panduan Upload
     st.info("👋 Selamat datang di Dashboard Alokasi Kuota Ujian Online!")
     st.markdown("""
     ### Langkah Memulai Aplikasi:
@@ -866,3 +964,45 @@ else:
     *Formula daya tampung ruangan saat ini menggunakan skema: **Kapasitas Ruang x Sesi Ujian** (Sesi dinamis berdasarkan skema TAP).*
     """)
     st.image("https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=1200&q=80", caption="Sistem Visualisasi Manajemen Alokasi Ruang & Kuota")
+
+
+    # Konfigurasi halaman Streamlit secara premium
+st.set_page_config(
+    page_title="Dashboard Alokasi Kuota Ujian Online",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Custom CSS untuk memperindah tampilan visual dashboard
+st.markdown("""
+    <style>
+    .main { background-color: #f8f9fa; }
+    .metric-card {
+        background-color: white; padding: 20px; border-radius: 10px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); border-left: 5px solid #007bff;
+        margin-bottom: 20px;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# --- FUNGSI LOGIKA BARU UNTUK PENYESUAIAN TAP/S2 ---
+def adjust_tap_capacity(df_ruangan):
+    """Fungsi untuk menambahkan input manual pada ruang TAP/S2"""
+    st.sidebar.subheader("⚙️ Penyesuaian Ruang TAP/S2")
+    df = df_ruangan.copy()
+    
+    # Deteksi ruang yang mengandung kata 'TAP' atau 'S2' (case insensitive)
+    mask_tap = df['nama_ruang'].str.contains('TAP|S2', case=False, na=False)
+    
+    if mask_tap.any():
+        for i, row in df[mask_tap].iterrows():
+            nama = row['nama_ruang']
+            st.sidebar.markdown(f"**{nama}**")
+            sesi = st.sidebar.number_input(f"Sesi {nama}", min_value=1, max_value=2, value=2, key=f"s_{i}")
+            kap = st.sidebar.number_input(f"Kapasitas/Sesi {nama}", min_value=1, value=int(row['kapasitas']), key=f"k_{i}")
+            
+            # Override nilai daya tampung
+            df.at[i, 'daya_tampung'] = sesi * kap
+    return df
+
