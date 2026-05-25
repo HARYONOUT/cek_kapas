@@ -57,8 +57,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Judul Utama Dashboard
-st.title("📊 Dashboard Pemantauan Kuota Ujian Online (UO)")
-st.markdown("<p class='custom-sub'>Sistem monitoring ketersediaan daya tampung sekolah (Kapasitas Ruang x Sesi Ujian) vs jumlah peserta real-time berbasis SQLite</p>", unsafe_allow_html=True)
+st.title("📊 Dashboard Pemantauan Kuota Ujian Online UT Semarang")
+st.markdown("<p class='custom-sub'>Sistem monitoring ketersediaan daya tampung sekolah Kapasitas Ruang dengan Sesi Ujian) </p>", unsafe_allow_html=True)
 
 DB_NAME = "kuota_ujian.db"
 
@@ -569,7 +569,7 @@ with st.expander("⚙️ Konfigurasi Basis Data & Unggah File Master (Khusus Adm
             n_ruang_tap = conn.execute("SELECT COUNT(*) FROM master_ruang_tap").fetchone()[0]
             conn.close()
             
-            st.markdown("### 📊 Ringkasan Baris Data SQLite Aktif:")
+            st.markdown("### 📊 Ringkasan data ujian online:")
             col_stat1, col_stat2, col_stat3, col_stat4, col_stat5 = st.columns(5)
             col_stat1.metric("Data Peserta", f"{n_peserta} baris")
             col_stat2.metric("Master Wilayah", f"{n_wilayah} baris")
@@ -787,9 +787,9 @@ if data_siap_proses:
             """, unsafe_allow_html=True)
             
         # --- TABEL UTAMA PIVOT DENGAN CONDITIONAL COLORING ---
-        st.subheader("🗓️ Visualisasi Sisa Kuota Lokasi per Tanggal (Kapasitas Dinamis)")
+        st.subheader("🗓️ Visualisasi Sisa Kuota Lokasi per Tanggal")
         st.markdown(
-            "Tabel pivot di bawah menampilkan **sisa kapasitas** untuk masing-masing lokasi. "
+            "Tabel menampilkan **sisa kapasitas** untuk masing-masing lokasi. "
             "Kapasitas dihitung berdasarkan **Daya Tampung Ruang x 2 Sesi** jika terdapat ujian TAP/S2 pada tanggal tersebut, dan **x 5 Sesi** jika ujian reguler."
         )
         
