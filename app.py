@@ -525,7 +525,7 @@ def check_password() -> bool:
         correct_password = st.secrets["admin"]["password"]
     except (FileNotFoundError, KeyError, AttributeError):
         # Fallback: hardcode password (ubah sesuai keinginan Anda)
-        correct_password = "admin123"
+        correct_password = "josjis"
     
     input_password = st.text_input("Masukkan Password Admin:", type="password", key="admin_pw")
     if st.button("Login sebagai Admin", key="admin_login"):
