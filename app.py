@@ -57,8 +57,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Judul Utama Dashboard
-st.title("📊 Dashboard Pemantauan Kuota Ujian Online (UO)")
-st.markdown("<p class='custom-sub'>Sistem monitoring ketersediaan daya tampung sekolah (Kapasitas Ruang x Sesi Ujian) vs jumlah peserta real-time berbasis SQLite</p>", unsafe_allow_html=True)
+st.title("📊 Dashboard Pemantauan Kuota Ujian Online UT Semarang")
+st.markdown("<p class='custom-sub'>Sistem monitoring ketersediaan daya tampung sekolah Kapasitas Ruang dengan Sesi Ujian </p>", unsafe_allow_html=True)
 
 DB_NAME = "kuota_ujian.db"
 
@@ -787,10 +787,10 @@ if data_siap_proses:
             """, unsafe_allow_html=True)
             
         # --- TABEL UTAMA PIVOT DENGAN CONDITIONAL COLORING ---
-        st.subheader("🗓️ Visualisasi Sisa Kuota Lokasi per Tanggal (Kapasitas Dinamis)")
+        st.subheader("🗓️ Visualisasi Sisa Kuota Lokasi per Tanggal ")
         st.markdown(
-            "Tabel pivot di bawah menampilkan **sisa kapasitas** untuk masing-masing lokasi. "
-            "Kapasitas dihitung berdasarkan **Daya Tampung Ruang x 2 Sesi** jika terdapat ujian TAP/S2 pada tanggal tersebut, dan **x 5 Sesi** jika ujian reguler."
+            "Tabel di bawah menampilkan **sisa kapasitas** untuk masing-masing lokasi. "
+            "Kapasitas dihitung berdasarkan **Daya Tampung Ruang x 2 Sesi** jika terdapat ujian UKT/S2 pada tanggal tersebut, dan **x 5 Sesi** jika ujian NON UKT/S2."
         )
         
         opsi_tampilan = st.radio(
@@ -1006,3 +1006,18 @@ def adjust_tap_capacity(df_ruangan):
             df.at[i, 'daya_tampung'] = sesi * kap
     return df
 
+counter_file = "counter.txt"
+
+# Baca counter saat ini
+if os.path.exists(counter_file):
+    with open(counter_file, "r") as f:
+        count = int(f.read())
+else:
+    count = 0
+
+# Tambah dan simpan counter
+count += 1
+with open(counter_file, "w") as f:
+    f.write(str(count))
+
+st.sidebar.markdown(f"### 👀 Total Pengunjung: {count}")
